@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "EzyPay",
+    "slug": "payverify",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "payverify",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "icon": "./assets/logo.png",
+    "splash": {
+      "image": "./assets/logo.png",
+      "backgroundColor": "#0a0a0f",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "cloud.trsinternational.payverify"
+    },
+    "android": {
+      "package": "cloud.trsinternational.payverify",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#0a0a0f"
+      },
+      "permissions": [
+        "READ_SMS",
+        "RECEIVE_SMS",
+        "INTERNET",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_DATA_SYNC",
+        "POST_NOTIFICATIONS",
+        "WAKE_LOCK",
+        "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
+      ]
+    },
+    "extra": {
+      "API_BASE_URL": "https://checkout.ezypay.it.com",
+      "ADMIN_URL": "https://ezypay.it.com/login"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraMavenRepos": [
+              "https://notifee.app/build/repo"
+            ],
+            "targetSdkVersion": 33,
+            "compileSdkVersion": 35
+          }
+        }
+      ]
+    ]
+  }
+}
