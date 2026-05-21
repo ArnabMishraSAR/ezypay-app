@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -18,17 +19,39 @@ import { session } from '../lib/storage';
 import { colors } from '../lib/theme';
 import Logo from '../components/Logo';
 
+// Normalize a Telegram handle the same way the backend does, so we can
+// validate before sending and show a helpful error.
+function normalizeTelegram(raw) {
+  return String(raw || '')
+    .trim()
+    .replace(/^https?:\/\/(t\.me|telegram\.me)\//i, '')
+    .replace(/^@/, '')
+    .trim();
+}
+
 export default function BindScreen({ onBound }) {
   const [authKey, setAuthKey] = useState('');
+  const [binderName, setBinderName] = useState('');
+  const [telegram, setTelegram] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const tgClean = normalizeTelegram(telegram);
+  const canSubmit =
+    authKey.trim().length > 0 &&
+    binderName.trim().length >= 2 &&
+    /^[a-zA-Z0-9_]{4,32}$/.test(tgClean);
+
   async function handleBind() {
     const key = authKey.trim();
-    if (!key) {
-      setError('Please paste your device auth key.');
+    const name = binderName.trim();
+    if (!key) { setError('Please paste your device auth key.'); return; }
+    if (name.length < 2) { setError('Enter the binder name (min 2 characters).'); return; }
+    if (!/^[a-zA-Z0-9_]{4,32}$/.test(tgClean)) {
+      setError('Enter a valid Telegram username (4–32 letters, digits or _).');
       return;
     }
+
     setError(null);
     setLoading(true);
     try {
@@ -36,6 +59,8 @@ export default function BindScreen({ onBound }) {
       const payload = {
         auth_key: key,
         device_id,
+        binder_name: name,
+        telegram: tgClean,
         model: Platform.OS === 'android' ? Application.nativeApplicationVersion : undefined,
         manufacturer: Platform.OS,
         os_version: String(Platform.Version || ''),
@@ -65,7 +90,11 @@ export default function BindScreen({ onBound }) {
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.container}>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.brandBlock}>
             <Logo size={64} radius={16} />
             <Text style={styles.brand}>EzyPay</Text>
@@ -86,16 +115,45 @@ export default function BindScreen({ onBound }) {
               editable={!loading}
             />
 
+            <Text style={[styles.label, styles.labelGap]}>Binder Name</Text>
+            <TextInput
+              style={styles.inputText}
+              placeholder="e.g. Rahim (Shop counter)"
+              placeholderTextColor="#6b7280"
+              autoCapitalize="words"
+              value={binderName}
+              onChangeText={setBinderName}
+              editable={!loading}
+              maxLength={60}
+            />
+
+            <Text style={[styles.label, styles.labelGap]}>Telegram Username</Text>
+            <TextInput
+              style={styles.inputText}
+              placeholder="@rahim_pay"
+              placeholderTextColor="#6b7280"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="off"
+              value={telegram}
+              onChangeText={setTelegram}
+              editable={!loading}
+              maxLength={40}
+            />
+            <Text style={styles.hint}>
+              Used to contact the person who bound this device.
+            </Text>
+
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
             <Pressable
               style={({ pressed }) => [
                 styles.button,
-                (loading || !authKey.trim()) && styles.buttonDisabled,
+                (loading || !canSubmit) && styles.buttonDisabled,
                 pressed && !loading && styles.buttonPressed,
               ]}
               onPress={handleBind}
-              disabled={loading || !authKey.trim()}
+              disabled={loading || !canSubmit}
             >
               {loading ? (
                 <ActivityIndicator color="#fff" />
@@ -106,7 +164,7 @@ export default function BindScreen({ onBound }) {
           </View>
 
           <Text style={styles.footer}>{API_BASE_URL}</Text>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -115,12 +173,13 @@ export default function BindScreen({ onBound }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
-  container: {
-    flex: 1,
+  scroll: {
+    flexGrow: 1,
     paddingHorizontal: 24,
+    paddingVertical: 32,
     justifyContent: 'center',
   },
-  brandBlock: { alignItems: 'center', marginBottom: 36, gap: 12 },
+  brandBlock: { alignItems: 'center', marginBottom: 28, gap: 12 },
   brand: {
     color: colors.text,
     fontSize: 30,
@@ -142,6 +201,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
+  labelGap: { marginTop: 16 },
   input: {
     backgroundColor: colors.bg,
     borderColor: colors.border,
@@ -153,7 +213,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     letterSpacing: 1,
   },
-  error: { color: '#fca5a5', marginTop: 10, fontSize: 13 },
+  inputText: {
+    backgroundColor: colors.bg,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 10,
+    color: colors.text,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  hint: { color: colors.faint, fontSize: 12, marginTop: 6 },
+  error: { color: '#fca5a5', marginTop: 12, fontSize: 13 },
   button: {
     backgroundColor: colors.violet,
     paddingVertical: 14,
