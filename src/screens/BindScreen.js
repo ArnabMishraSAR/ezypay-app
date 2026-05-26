@@ -19,8 +19,7 @@ import { session } from '../lib/storage';
 import { colors } from '../lib/theme';
 import Logo from '../components/Logo';
 
-// Normalize a Telegram handle the same way the backend does, so we can
-// validate before sending and show a helpful error.
+// Normalize a Telegram handle the same way the backend does.
 function normalizeTelegram(raw) {
   return String(raw || '')
     .trim()
@@ -29,26 +28,48 @@ function normalizeTelegram(raw) {
     .trim();
 }
 
+// Normalize a WhatsApp number to digits only (drop +, spaces, wa.me/ etc).
+function normalizeWhatsapp(raw) {
+  return String(raw || '')
+    .replace(/^https?:\/\/wa\.me\//i, '')
+    .replace(/[^\d]/g, '');
+}
+
 export default function BindScreen({ onBound }) {
   const [authKey, setAuthKey] = useState('');
   const [binderName, setBinderName] = useState('');
   const [telegram, setTelegram] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const tgClean = normalizeTelegram(telegram);
+  const waClean = normalizeWhatsapp(whatsapp);
+
+  const tgValid = tgClean === '' || /^[a-zA-Z0-9_]{4,32}$/.test(tgClean);
+  const waValid = waClean === '' || (waClean.length >= 8 && waClean.length <= 15);
+  const hasContact = tgClean !== '' || waClean !== '';
+
   const canSubmit =
     authKey.trim().length > 0 &&
     binderName.trim().length >= 2 &&
-    /^[a-zA-Z0-9_]{4,32}$/.test(tgClean);
+    tgValid && waValid && hasContact;
 
   async function handleBind() {
     const key = authKey.trim();
     const name = binderName.trim();
     if (!key) { setError('Please paste your device auth key.'); return; }
     if (name.length < 2) { setError('Enter the binder name (min 2 characters).'); return; }
-    if (!/^[a-zA-Z0-9_]{4,32}$/.test(tgClean)) {
-      setError('Enter a valid Telegram username (4–32 letters, digits or _).');
+    if (!hasContact) {
+      setError('Add at least a WhatsApp number or Telegram username.');
+      return;
+    }
+    if (!tgValid) {
+      setError('Telegram username must be 4–32 letters, digits or _.');
+      return;
+    }
+    if (!waValid) {
+      setError('WhatsApp must be a valid international number (8–15 digits).');
       return;
     }
 
@@ -61,6 +82,7 @@ export default function BindScreen({ onBound }) {
         device_id,
         binder_name: name,
         telegram: tgClean,
+        whatsapp: waClean,
         model: Platform.OS === 'android' ? Application.nativeApplicationVersion : undefined,
         manufacturer: Platform.OS,
         os_version: String(Platform.Version || ''),
@@ -127,6 +149,20 @@ export default function BindScreen({ onBound }) {
               maxLength={60}
             />
 
+            <Text style={[styles.label, styles.labelGap]}>WhatsApp Number</Text>
+            <TextInput
+              style={styles.inputText}
+              placeholder="8801712345678"
+              placeholderTextColor="#6b7280"
+              keyboardType="phone-pad"
+              autoCorrect={false}
+              autoComplete="off"
+              value={whatsapp}
+              onChangeText={setWhatsapp}
+              editable={!loading}
+              maxLength={20}
+            />
+
             <Text style={[styles.label, styles.labelGap]}>Telegram Username</Text>
             <TextInput
               style={styles.inputText}
@@ -141,7 +177,7 @@ export default function BindScreen({ onBound }) {
               maxLength={40}
             />
             <Text style={styles.hint}>
-              Used to contact the person who bound this device.
+              Add at least one — used to contact the person who bound this device.
             </Text>
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
