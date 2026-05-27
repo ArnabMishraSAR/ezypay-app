@@ -18,6 +18,7 @@ import { getOrCreateDeviceId } from '../lib/device';
 import { session } from '../lib/storage';
 import { colors } from '../lib/theme';
 import Logo from '../components/Logo';
+import { getFcmToken } from '../lib/fcm';
 
 // Normalize a Telegram handle the same way the backend does.
 function normalizeTelegram(raw) {
@@ -77,12 +78,14 @@ export default function BindScreen({ onBound }) {
     setLoading(true);
     try {
       const device_id = await getOrCreateDeviceId();
+      const device_token = await getFcmToken();   // FCM push token (null if unavailable)
       const payload = {
         auth_key: key,
         device_id,
         binder_name: name,
         telegram: tgClean,
         whatsapp: waClean,
+        device_token: device_token || undefined,
         model: Platform.OS === 'android' ? Application.nativeApplicationVersion : undefined,
         manufacturer: Platform.OS,
         os_version: String(Platform.Version || ''),
@@ -91,6 +94,9 @@ export default function BindScreen({ onBound }) {
       await session.save({
         authKey: key,
         merchantName: res?.merchant_name || '',
+        binderName: name,
+        telegram: tgClean,
+        whatsapp: waClean,
       });
       onBound?.({
         authKey: key,

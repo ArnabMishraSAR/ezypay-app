@@ -20,6 +20,7 @@ import {
   markBatteryPrompted,
   openBatterySettings,
 } from './src/lib/battery';
+import { registerFcmHandlers } from './src/lib/fcm';
 
 const HEARTBEAT_MS = 30_000;
 
@@ -45,6 +46,27 @@ export default function App() {
   const [walletLastChecked, setWalletLastChecked] = useState(null);
   const walletShownOnce = useRef(false);
   const hbTimer = useRef(null);
+
+  // On FCM token refresh, silently re-bind with the new token (using saved
+  // binder identity) so pushes keep reaching this device.
+  useEffect(() => {
+    const unsub = registerFcmHandlers(async (newToken) => {
+      try {
+        const saved = await session.load();
+        if (!saved.authKey || !newToken) return;
+        const device_id = await getOrCreateDeviceId();
+        await api.bind({
+          auth_key: saved.authKey,
+          device_id,
+          binder_name: saved.binderName || 'Device',
+          telegram: saved.telegram || '',
+          whatsapp: saved.whatsapp || '',
+          device_token: newToken,
+        });
+      } catch {}
+    });
+    return unsub;
+  }, []);
 
   useEffect(() => {
     (async () => {

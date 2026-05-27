@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "cloud.trsinternational.payverify",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#0a0a0f"
@@ -50,7 +51,9 @@
             "compileSdkVersion": 35
           }
         }
-      ]
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging"
     ]
   }
 }

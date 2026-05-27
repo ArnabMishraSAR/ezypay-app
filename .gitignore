@@ -6,3 +6,7 @@ web-build/
 .env
 .env.*
 .DS_Store
+
+# Firebase (secret config)
+google-services.json
+GoogleService-Info.plist
