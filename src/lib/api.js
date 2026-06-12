@@ -61,6 +61,7 @@ export const api = {
   bind: (payload) => request('/api/device/bind', payload, { skipWalletCheck: true }),
   unbind: (payload) => request('/api/device/unbind', payload, { skipWalletCheck: true }),
   heartbeat: (payload) => request('/api/device/heartbeat', payload),
+  pong: (payload) => request('/api/device/pong', payload, { skipWalletCheck: true }),
   poll: (payload) => request('/api/device/poll', payload),
   report: (payload) => request('/api/device/report', payload),
   transactions: (payload) => request('/api/device/transactions', payload),

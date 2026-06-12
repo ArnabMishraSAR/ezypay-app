@@ -20,7 +20,11 @@ import {
   markBatteryPrompted,
   openBatterySettings,
 } from './src/lib/battery';
-import { registerFcmHandlers } from './src/lib/fcm';
+import { registerFcmHandlers, registerBackgroundHandler } from './src/lib/fcm';
+
+// Must be registered outside any component so it runs at JS bundle init time.
+// Handles FCM data messages (e.g. server pings) when the app is killed/background.
+registerBackgroundHandler();
 
 const HEARTBEAT_MS = 30_000;
 
