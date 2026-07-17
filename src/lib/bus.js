@@ -25,3 +25,8 @@ export const walletEmptyBus = createBus();
 // Fired whenever an API response includes a `balance` field (200 or 402).
 // Payload: { balance, fee?, threshold? }
 export const balanceBus = createBus();
+
+// Fired when an FCM app_update message arrives while the app is foregrounded
+// (backgrounded apps get the system-tray notification instead).
+// Payload: { latest, url }
+export const appUpdateBus = createBus();
