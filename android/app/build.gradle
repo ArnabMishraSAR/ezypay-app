@@ -98,8 +98,9 @@ android {
         // effect, and this alone would be silently reverted by a future prebuild.
         //
         // 2 / 0.2.0 — native Kotlin verifier service replaces the JS polling loop.
-        versionCode 2
-        versionName "0.2.0"
+        // 3 / 0.3.0 — report versionCode on pong; handle app_update push (tap opens URL).
+        versionCode 3
+        versionName "0.3.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

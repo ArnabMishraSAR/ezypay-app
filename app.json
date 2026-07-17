@@ -2,7 +2,7 @@
   "expo": {
     "name": "EzyPay",
     "slug": "payverify",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "orientation": "portrait",
     "scheme": "payverify",
     "userInterfaceStyle": "light",
