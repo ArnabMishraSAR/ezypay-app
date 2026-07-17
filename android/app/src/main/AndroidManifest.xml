@@ -5,6 +5,7 @@
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
   <uses-permission android:name="android.permission.READ_SMS"/>
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
   <uses-permission android:name="android.permission.RECEIVE_SMS"/>
   <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
@@ -34,5 +35,61 @@
         <data android:scheme="payverify"/>
       </intent-filter>
     </activity>
+
+    <!--
+      Native SMS verifier foreground service.
+
+      android:process=":verifier" is the load-bearing attribute. It puts the
+      service in its own process, so swiping the app out of Recents tears down
+      only the React Native/UI process and leaves this one polling. (Removing
+      this attribute reverts to a same-process build; onTaskRemoved +
+      START_STICKY in VerifierService then become the recovery path instead.)
+      NOTE: MainApplication.onCreate has a process guard that depends on this
+      exact name — keep them in sync.
+
+      Firebase is unaffected: FirebaseInitProvider is a ContentProvider, and
+      providers without android:process only instantiate in the default process,
+      so :verifier never loads Firebase. FCM ping/pong keeps working exactly as
+      before, in the main process, via its Headless JS background handler.
+
+      stopWithTask=false: never tear the service down just because the task went
+      away. That is precisely the failure this replaces.
+
+      foregroundServiceType=dataSync is declared for correctness. It is not
+      enforced at targetSdkVersion 33 (enforcement starts at targetSdk 34, and
+      the Android 15 six-hour dataSync cap starts at targetSdk 35) — which is
+      exactly why the target must stay at 33. Raising it will cap this service
+      at 6 hours per day and SMS verification will start dying again.
+    -->
+    <service
+        android:name="cloud.trsinternational.payverify.verifier.VerifierService"
+        android:enabled="true"
+        android:exported="false"
+        android:foregroundServiceType="dataSync"
+        android:process=":verifier"
+        android:stopWithTask="false"/>
+
+    <!--
+      Restarts the service after reboot / app update, and backs up START_STICKY
+      via the AlarmManager restart in VerifierService.scheduleRestart.
+
+      Runs in :verifier too, so a reboot spawns only the lightweight service
+      process rather than booting the entire React Native runtime.
+
+      exported=true is required: BOOT_COMPLETED is delivered by the system, and
+      an un-exported receiver would never hear it.
+    -->
+    <receiver
+        android:name="cloud.trsinternational.payverify.verifier.BootReceiver"
+        android:enabled="true"
+        android:exported="true"
+        android:process=":verifier">
+      <intent-filter android:priority="1000">
+        <action android:name="android.intent.action.BOOT_COMPLETED"/>
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+        <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+        <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+      </intent-filter>
+    </receiver>
   </application>
 </manifest>

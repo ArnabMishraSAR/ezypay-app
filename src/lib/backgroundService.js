@@ -1,78 +1,107 @@
-// Foreground-service runner. Keeps the verify cycle alive when the app is
-// minimized or the screen is off, using react-native-background-actions.
+// App-facing control surface for the background verify service.
+//
+// The exported API is unchanged from the react-native-background-actions
+// version so App.js didn't have to move — but the implementation underneath is
+// now entirely native (Kotlin foreground service, own :verifier process).
+//
+// WHY THE REWRITE
+// ---------------
+// react-native-background-actions ran the 10s verify loop in this JS runtime,
+// and its service returned START_NOT_STICKY. Swiping the app out of Recents
+// killed the process, and START_NOT_STICKY told Android never to bring it back.
+// Polling stopped for good, so payments silently stopped auto-verifying until
+// someone reopened the app. Nothing in JS could fix that, because the fix has to
+// survive the JS engine's death.
+//
+// NOTE — this is NOT the same as the device going "offline". In this app
+// is_online is driven by the FCM ping/pong loop (see fcm.js, and the server's
+// services/ping.js: is_online = last_ping_ack >= last_ping_sent_at), and that
+// already survives the app being killed, because @react-native-firebase wakes a
+// Headless JS handler to answer the ping. So a swiped-away phone kept *looking*
+// healthy on the dashboard while quietly verifying nothing — which is the more
+// dangerous failure, and why this was worth fixing properly.
+//
+// FCM is untouched by this change. The two are independent: FCM answers "is this
+// phone alive?"; the native service does the actual SMS verification.
+//
+// The native service polls, reads SMS, matches and reports on its own. It needs
+// nothing from this file after start().
 import { Platform } from 'react-native';
 
-import { runVerifyCycle } from './verifyLoop';
-
-let BackgroundService = null;
-try {
-  BackgroundService = require('react-native-background-actions').default;
-} catch {
-  BackgroundService = null;   // not available in Expo Go / web
-}
-
-const POLL_MS = 10_000;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// The long-running task: loop until the service is stopped.
-async function task(taskData) {
-  const authKey = taskData?.authKey;
-  let lastMatched = 0;
-  while (BackgroundService && BackgroundService.isRunning()) {
-    try {
-      const res = await runVerifyCycle(authKey);
-      if (res?.matchedIds?.length) {
-        lastMatched += res.matchedIds.length;
-        try {
-          await BackgroundService.updateNotification({
-            taskDesc: `${lastMatched} payment(s) auto-verified`,
-          });
-        } catch {}
-      }
-    } catch {
-      // swallow — never let the loop die
-    }
-    await sleep(POLL_MS);
-  }
-}
-
-const baseOptions = {
-  taskName: 'EzyPayMonitor',
-  taskTitle: 'EzyPay · Monitoring payments',
-  taskDesc: 'Watching wallet SMS to auto-verify payments',
-  taskIcon: { name: 'ic_launcher', type: 'mipmap' },
-  color: '#7c3aed',
-  linkingURI: 'payverify://',
-};
+import { API_BASE_URL } from './api';
+import { getOrCreateDeviceId } from './device';
+import {
+  clearNativeSession,
+  getNativeStatus,
+  isNativeVerifierAvailable,
+  startNative,
+  stopNative,
+  subscribeNativeStatus,
+} from './nativeVerifier';
 
 export function isServiceSupported() {
-  return Platform.OS === 'android' && !!BackgroundService;
+  return Platform.OS === 'android' && isNativeVerifierAvailable();
 }
 
-export function isServiceRunning() {
-  return !!(BackgroundService && BackgroundService.isRunning());
+/**
+ * NOTE: async now (it was sync under react-native-background-actions).
+ * The service lives in another process, so "is it running" is a real IPC
+ * question rather than an in-memory flag.
+ */
+export async function isServiceRunning() {
+  if (!isServiceSupported()) return false;
+  const s = await getNativeStatus();
+  return !!s.running;
 }
 
+/**
+ * Start the native service. Signature is deliberately unchanged — device id and
+ * base URL are resolved here rather than pushed onto callers.
+ *
+ * Safe to call repeatedly: a start carrying a new auth key just re-configures
+ * the running service.
+ */
 export async function startVerifyService(authKey) {
   if (!isServiceSupported() || !authKey) return false;
   try {
-    if (BackgroundService.isRunning()) {
-      // already running — refresh the auth key by restarting
-      await BackgroundService.stop();
-    }
-    await BackgroundService.start(task, {
-      ...baseOptions,
-      parameters: { authKey },
-    });
-    return true;
-  } catch (e) {
+    const deviceId = await getOrCreateDeviceId();
+    return await startNative(authKey, deviceId, API_BASE_URL);
+  } catch {
     return false;
   }
 }
 
+/** Stop the service. Also clears the flag BootReceiver checks after a reboot. */
 export async function stopVerifyService() {
   if (!isServiceSupported()) return;
   try {
-    if (BackgroundService.isRunning()) await BackgroundService.stop();
+    await stopNative();
   } catch {}
 }
+
+/**
+ * Stop AND wipe the natively-stored auth key.
+ *
+ * Use this on unbind, not stopVerifyService: the key is mirrored into
+ * SharedPreferences so the service can restart at boot without a JS engine, and
+ * a revoked key must not be left on disk for BootReceiver to pick up.
+ */
+export async function clearVerifierSession() {
+  if (!isServiceSupported()) return;
+  try {
+    await clearNativeSession();
+  } catch {}
+}
+
+/**
+ * Subscribe to live service status (fires once per polling cycle while the app
+ * is open). Returns an unsubscribe function.
+ *
+ * @param {(s: {running: boolean, matchedTotal: number, queued: number,
+ *             walletEmpty: boolean, lastCycleAt: number, note: string|null}) => void} fn
+ */
+export function subscribeServiceStatus(fn) {
+  return subscribeNativeStatus(fn);
+}
+
+export { getNativeStatus as getServiceStatus };

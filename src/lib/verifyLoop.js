@@ -8,9 +8,15 @@ import { checkSmsPermissions } from './permissions';
 import { isSmsAvailable, listRecentSms, smsLastError } from './sms';
 import { findMatch } from './matcher';
 
-// Module-level guard so the same verification isn't reported twice when the
-// foreground poll and the background service briefly overlap. Shared because
-// react-native-background-actions runs the task in the same JS runtime.
+// Module-level guard so the same verification isn't reported twice within this
+// JS runtime.
+//
+// It does NOT cover the native verifier service — that runs in a separate
+// process and keeps its own in-flight set. That overlap is safe and deliberate:
+// /api/device/report updates WHERE status='pending', so whichever side reports
+// first wins and the other gets a 404, which is handled below as
+// already-resolved. The fee is debited inside the winning branch only, so a
+// double report can never double-charge.
 const inFlight = new Set();
 
 /**

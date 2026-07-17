@@ -14,7 +14,11 @@ import { api } from './src/lib/api';
 import { balanceBus, walletEmptyBus } from './src/lib/bus';
 import { getOrCreateDeviceId } from './src/lib/device';
 import { colors } from './src/lib/theme';
-import { startVerifyService, stopVerifyService } from './src/lib/backgroundService';
+import {
+  clearVerifierSession,
+  startVerifyService,
+  stopVerifyService,
+} from './src/lib/backgroundService';
 import {
   alreadyPromptedBattery,
   markBatteryPrompted,
@@ -169,7 +173,10 @@ export default function App() {
 
   const unbind = async () => {
     setDrawerOpen(false);
-    await stopVerifyService();
+    // clear, not just stop: the auth key is mirrored into native storage so the
+    // service can restart itself after a reboot. Leaving it there would let
+    // BootReceiver bring the service back with a key the server has revoked.
+    await clearVerifierSession();
     try {
       const device_id = await getOrCreateDeviceId();
       await api.unbind({ auth_key: authKey, device_id });

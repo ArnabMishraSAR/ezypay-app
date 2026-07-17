@@ -2,7 +2,7 @@
   "expo": {
     "name": "EzyPay",
     "slug": "payverify",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "scheme": "payverify",
     "userInterfaceStyle": "light",
@@ -32,8 +32,10 @@
         "FOREGROUND_SERVICE_DATA_SYNC",
         "POST_NOTIFICATIONS",
         "WAKE_LOCK",
-        "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
-      ]
+        "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+        "RECEIVE_BOOT_COMPLETED"
+      ],
+      "versionCode": 2
     },
     "extra": {
       "API_BASE_URL": "https://checkout.ezypay.it.com",
