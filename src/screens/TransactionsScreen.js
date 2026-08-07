@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -17,18 +17,20 @@ import { colors, providerStyle } from '../lib/theme';
 import BalancePill from '../components/BalancePill';
 import {
   extractList,
-  gatewayKey,
   normalizeStatus,
+  presetRange,
   txnDate,
-  withinDays,
 } from '../lib/txn';
 
 const DATE_PRESETS = [
-  { key: 'today', label: 'Today',  days: 1 },
-  { key: '7d',    label: '7 Days', days: 7 },
-  { key: '30d',   label: '30 Days', days: 30 },
-  { key: 'all',   label: 'All',    days: Infinity },
+  { key: 'today', label: 'Today' },
+  { key: '7d',    label: '7 Days' },
+  { key: '30d',   label: '30 Days' },
+  { key: 'all',   label: 'All' },
 ];
+
+// Rows per page the merchant can choose between.
+const PAGE_SIZES = [20, 50, 100];
 
 const TITLE = {
   pending:  'Pending',
@@ -36,6 +38,12 @@ const TITLE = {
   rejected: 'Rejected',
   all:      'All Transactions',
 };
+
+const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const gatewayLabel = (g) =>
+  `${cap(g.provider)}${g.variant ? ' ' + g.variant : ''} ${g.account_number || ''}`.trim();
+const formatBDT = (n) =>
+  'BDT ' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function TransactionsScreen({
   authKey,
@@ -47,40 +55,80 @@ export default function TransactionsScreen({
   onOpenWallet,
   onSelectPending,
 }) {
+  const isPending = filter === 'pending';
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [rows, setRows] = useState([]);
   const [error, setError] = useState(null);
 
   const [datePreset, setDatePreset] = useState('all');
-  const [gateway, setGateway] = useState('all');
+  const [gateway, setGateway] = useState('all');   // gateway_id or 'all'
+  const [gateways, setGateways] = useState([]);     // distinct list from server
+  const [pageSize, setPageSize] = useState(20);
+  const [page, setPage] = useState(0);              // 0-based; page 0 = newest
+  const [total, setTotal] = useState(0);
 
+  // Everything below (status/date/gateway filtering + paging) is resolved by
+  // the backend, so a page reaches the whole history rather than a capped
+  // recent slice. Rows arrive newest-first.
   const load = useCallback(async () => {
+    setError(null);
+    setLoading(true);
     try {
       const device_id = await getOrCreateDeviceId();
-      let list = [];
-      if (filter === 'pending') {
+      if (isPending) {
         const r = await api.poll({ auth_key: authKey, device_id });
-        list = (r?.verifications || []).map((v) => ({ ...v, status: 'pending' }));
+        const list = (r?.verifications || []).map((v) => ({ ...v, status: 'pending' }));
+        setRows(list);
+        setTotal(list.length);
       } else {
+        const statusParam =
+          filter === 'approved' ? 'success' :
+          filter === 'rejected' ? 'failed'  : undefined;
         try {
-          const r = await api.transactions({ auth_key: authKey, device_id });
-          list = extractList(r);
+          const r = await api.transactions({
+            auth_key: authKey,
+            device_id,
+            status: statusParam,
+            ...presetRange(datePreset),
+            gateway_id: gateway !== 'all' ? gateway : undefined,
+            limit: pageSize,
+            offset: page * pageSize,
+          });
+          setRows(extractList(r));
+          setTotal(Number(r.total) || 0);
+          setGateways(Array.isArray(r.gateways) ? r.gateways : []);
         } catch (e) {
-          if (e?.status === 404) list = [];
+          if (e?.status === 404) { setRows([]); setTotal(0); setGateways([]); }
           else throw e;
         }
       }
-      setRows(list);
-      setError(null);
     } catch (e) {
       setError(e?.message || 'Failed to load');
     } finally {
       setLoading(false);
     }
-  }, [authKey, filter]);
+  }, [authKey, filter, isPending, datePreset, gateway, pageSize, page]);
 
-  useEffect(() => { setLoading(true); load(); }, [load]);
+  useEffect(() => { load(); }, [load]);
+
+  // If the chosen gateway no longer appears in the current date view, fall back
+  // to All so the merchant isn't stranded on an empty, invisible selection.
+  useEffect(() => {
+    if (gateway !== 'all' && gateways.length && !gateways.some((g) => g.id === gateway)) {
+      setGateway('all');
+      setPage(0);
+    }
+  }, [gateways]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  // Snap back into range if a filter change shrank the result set below the
+  // current page (e.g. was on page 5, new filter only has 2 pages).
+  useEffect(() => {
+    if (page > totalPages - 1) setPage(totalPages - 1);
+  }, [totalPages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -88,29 +136,16 @@ export default function TransactionsScreen({
     setRefreshing(false);
   };
 
-  const gateways = useMemo(() => {
-    const set = new Set();
-    rows.forEach((t) => set.add(gatewayKey(t)));
-    return ['all', ...Array.from(set).sort()];
-  }, [rows]);
+  const firstRow = total === 0 ? 0 : page * pageSize + 1;
+  const lastRow  = Math.min(total, (page + 1) * pageSize);
+  const totalApproved = gateways.reduce((s, g) => s + Number(g.approved_amount || 0), 0);
 
-  const filtered = useMemo(() => {
-    const presetDays = DATE_PRESETS.find((p) => p.key === datePreset)?.days ?? Infinity;
-    return rows.filter((t) => {
-      const s = normalizeStatus(t.status);
-      if (filter === 'approved' && s !== 'success') return false;
-      if (filter === 'rejected' && s !== 'failed')  return false;
-      if (filter === 'pending'  && s !== 'pending') return false;
-
-      if (presetDays !== Infinity) {
-        const d = txnDate(t);
-        if (!d || !withinDays(d, presetDays)) return false;
-      }
-
-      if (gateway !== 'all' && gatewayKey(t) !== gateway) return false;
-      return true;
-    });
-  }, [rows, filter, datePreset, gateway]);
+  // Filter changes reset to the first (newest) page.
+  const selectDate     = (key) => { setDatePreset(key); setPage(0); };
+  const selectGateway  = (id)  => { setGateway(id);     setPage(0); };
+  const selectPageSize = (n)   => { setPageSize(n);     setPage(0); };
+  const goNewer = () => setPage((p) => Math.max(0, p - 1));
+  const goOlder = () => setPage((p) => (p + 1 < totalPages ? p + 1 : p));
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -124,43 +159,56 @@ export default function TransactionsScreen({
         <BalancePill balance={balance} threshold={threshold} onPress={onOpenWallet} />
       </View>
 
-      {(filter === 'all' || filter === 'approved' || filter === 'rejected') ? (
+      {!isPending ? (
         <View style={styles.filterBlock}>
           <Text style={styles.filterLabel}>Date</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
             {DATE_PRESETS.map((p) => (
-              <Chip key={p.key} active={datePreset === p.key} onPress={() => setDatePreset(p.key)}>
+              <Chip key={p.key} active={datePreset === p.key} onPress={() => selectDate(p.key)}>
                 {p.label}
               </Chip>
             ))}
           </ScrollView>
 
-          {gateways.length > 1 ? (
+          {gateways.length > 0 ? (
             <>
-              <Text style={[styles.filterLabel, { marginTop: 10 }]}>Gateway</Text>
+              <Text style={[styles.filterLabel, { marginTop: 10 }]}>Gateway · approved in range</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                <GatewayChip
+                  active={gateway === 'all'} onPress={() => selectGateway('all')}
+                  title="All accounts" amount={formatBDT(totalApproved)}
+                />
                 {gateways.map((g) => (
-                  <Chip key={g} active={gateway === g} onPress={() => setGateway(g)}>
-                    {g === 'all' ? 'All' : g}
-                  </Chip>
+                  <GatewayChip
+                    key={g.id}
+                    active={gateway === g.id} onPress={() => selectGateway(g.id)}
+                    title={gatewayLabel(g)} amount={formatBDT(g.approved_amount)}
+                  />
                 ))}
               </ScrollView>
             </>
           ) : null}
+
+          <Text style={[styles.filterLabel, { marginTop: 10 }]}>Per page</Text>
+          <View style={styles.chipRowStatic}>
+            {PAGE_SIZES.map((n) => (
+              <Chip key={n} active={pageSize === n} onPress={() => selectPageSize(n)}>{String(n)}</Chip>
+            ))}
+          </View>
         </View>
       ) : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      {loading ? (
+      {loading && rows.length === 0 ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.violet} />
         </View>
       ) : (
         <FlatList
-          data={filtered}
+          data={rows}
           keyExtractor={(t, i) => String(t.verification_id || t.id || `${t.txnid_submitted || ''}-${i}`)}
-          contentContainerStyle={filtered.length === 0 ? styles.emptyWrap : styles.listWrap}
+          contentContainerStyle={rows.length === 0 ? styles.emptyWrap : styles.listWrap}
           refreshControl={<RefreshControl tintColor={colors.violet} refreshing={refreshing} onRefresh={onRefresh} />}
           ListEmptyComponent={
             <View style={styles.empty}>
@@ -180,6 +228,39 @@ export default function TransactionsScreen({
           )}
         />
       )}
+
+      {!isPending && total > 0 ? (
+        <View style={styles.pager}>
+          <Pressable
+            onPress={goNewer}
+            disabled={page <= 0 || loading}
+            style={({ pressed }) => [
+              styles.pagerBtn,
+              (page <= 0 || loading) && styles.pagerBtnDisabled,
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <Text style={styles.pagerBtnText}>‹ Newer</Text>
+          </Pressable>
+
+          <View style={styles.pagerInfo}>
+            <Text style={styles.pagerCount}>{firstRow}–{lastRow} of {total}</Text>
+            <Text style={styles.pagerPage}>Page {page + 1} of {totalPages} · newest first</Text>
+          </View>
+
+          <Pressable
+            onPress={goOlder}
+            disabled={page >= totalPages - 1 || loading}
+            style={({ pressed }) => [
+              styles.pagerBtn,
+              (page >= totalPages - 1 || loading) && styles.pagerBtnDisabled,
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <Text style={styles.pagerBtnText}>Older ›</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -197,6 +278,24 @@ function Chip({ active, onPress, children }) {
       <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>
         {children}
       </Text>
+    </Pressable>
+  );
+}
+
+// Two-line gateway chip: the account on top, its approved (money-in) total for
+// the current date range below.
+function GatewayChip({ active, onPress, title, amount }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.gwChip,
+        active && styles.chipActive,
+        pressed && { opacity: 0.85 },
+      ]}
+    >
+      <Text style={[styles.gwChipTitle, active && styles.chipTextActive]} numberOfLines={1}>{title}</Text>
+      <Text style={styles.gwChipAmount} numberOfLines={1}>{amount}</Text>
     </Pressable>
   );
 }
@@ -271,6 +370,7 @@ const styles = StyleSheet.create({
   },
   filterLabel: { color: colors.muted, fontSize: 11, marginLeft: 6, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
   chipRow: { paddingHorizontal: 4, gap: 8 },
+  chipRowStatic: { flexDirection: 'row', paddingHorizontal: 4 },
   chip: {
     paddingHorizontal: 12, paddingVertical: 7,
     borderRadius: 999,
@@ -282,7 +382,35 @@ const styles = StyleSheet.create({
   chipText: { color: colors.muted, fontSize: 12, fontWeight: '600' },
   chipTextActive: { color: '#c7d2fe' },
 
+  gwChip: {
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 14,
+    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface,
+    marginRight: 8,
+    minWidth: 130,
+  },
+  gwChipTitle: { color: colors.muted, fontSize: 12, fontWeight: '600' },
+  gwChipAmount: { color: colors.green, fontSize: 13, fontWeight: '800', marginTop: 2 },
+
   error: { color: '#fca5a5', padding: 12, fontSize: 13, textAlign: 'center' },
+
+  pager: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderTopWidth: 1, borderTopColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  pagerBtn: {
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 10, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  pagerBtnDisabled: { opacity: 0.4 },
+  pagerBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  pagerInfo: { alignItems: 'center' },
+  pagerCount: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  pagerPage: { color: colors.muted, fontSize: 11, marginTop: 2 },
 
   listWrap: { padding: 12 },
   emptyWrap: { flexGrow: 1, justifyContent: 'center', padding: 24 },

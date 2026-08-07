@@ -99,8 +99,11 @@ android {
         //
         // 2 / 0.2.0 — native Kotlin verifier service replaces the JS polling loop.
         // 3 / 0.3.0 — report versionCode on pong; handle app_update push (tap opens URL).
-        versionCode 3
-        versionName "0.3.0"
+        // 4 / 0.3.1 — server-side date filtering on the transactions screen (Today/7d/30d).
+        // 5 / 0.3.2 — paginated transactions (page size + newer/older), server-side gateway filter.
+        // 6 / 0.3.3 — per-account approved totals, real dashboard stats + live Today's Collection.
+        versionCode 6
+        versionName "0.3.3"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

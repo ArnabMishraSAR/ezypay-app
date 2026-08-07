@@ -22,12 +22,6 @@ import {
   providerStyle,
 } from '../lib/theme';
 import {
-  extractList,
-  isToday,
-  normalizeStatus,
-  txnDate,
-} from '../lib/txn';
-import {
   checkSmsPermissions,
   requestSmsPermissions,
   requestNotificationPermission,
@@ -48,7 +42,7 @@ export default function HomeScreen({
 }) {
   const [deviceId, setDeviceId] = useState(null);
   const [items, setItems] = useState([]);
-  const [today, setToday] = useState({ total: 0, success: 0, failed: 0 });
+  const [today, setToday] = useState({ total: 0, success: 0, failed: 0, approved_amount: 0 });
   const [allTime, setAllTime] = useState({ total: 0, success: 0, failed: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -108,29 +102,24 @@ export default function HomeScreen({
         setLastMatch({ txnid: cycle.matchedIds.length + ' payment(s)', when: Date.now() });
       }
 
-      let txnList = null;
+      // Real aggregates from the server — not a count of a capped page — so the
+      // totals are the true all-time figures and today's collection is exact.
       try {
-        const t = await api.transactions({ auth_key: authKey, device_id: deviceId });
-        txnList = extractList(t);
-      } catch { /* endpoint optional */ }
-
-      if (Array.isArray(txnList)) {
-        const tStats = { total: 0, success: 0, failed: 0 };
-        const aStats = { total: 0, success: 0, failed: 0 };
-        for (const t of txnList) {
-          const s = normalizeStatus(t.status);
-          aStats.total += 1;
-          if (s === 'success') aStats.success += 1;
-          else if (s === 'failed') aStats.failed += 1;
-          if (isToday(txnDate(t))) {
-            tStats.total += 1;
-            if (s === 'success') tStats.success += 1;
-            else if (s === 'failed') tStats.failed += 1;
-          }
+        const st = await api.stats({ auth_key: authKey, device_id: deviceId });
+        if (mounted.current && st) {
+          setAllTime({
+            total:   st.all_time?.total   || 0,
+            success: st.all_time?.success || 0,
+            failed:  st.all_time?.failed  || 0,
+          });
+          setToday({
+            total:           st.today?.total   || 0,
+            success:         st.today?.success || 0,
+            failed:          st.today?.failed  || 0,
+            approved_amount: Number(st.today?.approved_amount) || 0,
+          });
         }
-        setToday(tStats);
-        setAllTime(aStats);
-      }
+      } catch { /* stats endpoint optional on older backends */ }
       setError(cycle.error || null);
     } catch (e) {
       if (!mounted.current) return;
@@ -234,6 +223,21 @@ export default function HomeScreen({
             </View>
           </View>
 
+          {/* Today's collection — the approved money in so far, refreshed on
+              every poll and whenever a new payment is auto-verified. */}
+          <View style={styles.collectionCard}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.collectionLabel}>Today's Collection</Text>
+              <Text style={styles.collectionValue}>{formatBDT(today.approved_amount)}</Text>
+              <Text style={styles.collectionSub}>
+                {today.success} approved today · updates live
+              </Text>
+            </View>
+            <View style={styles.collectionGlyph}>
+              <Text style={styles.collectionGlyphText}>৳</Text>
+            </View>
+          </View>
+
           <View style={styles.greetCard}>
             <View style={{ flex: 1 }}>
               <Text style={styles.greetHi}>{greeting}</Text>
@@ -320,6 +324,11 @@ function Divider() { return <View style={styles.miniDivider} />; }
 
 function shortDate() {
   return new Date().toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+}
+
+function formatBDT(n) {
+  const v = Number(n || 0);
+  return 'BDT ' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function PendingCard({ item, onPress }) {
@@ -419,6 +428,25 @@ const styles = StyleSheet.create({
   miniValue: { fontSize: 22, fontWeight: '800' },
   miniLabel: { color: colors.muted, fontSize: 11, marginTop: 2 },
   miniDivider: { width: 1, height: 30, backgroundColor: colors.border },
+
+  collectionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    borderRadius: 16,
+    padding: 18,
+    backgroundColor: colors.greenSoft,
+    borderWidth: 1, borderColor: colors.green + '55',
+  },
+  collectionLabel: { color: '#86efac', fontSize: 13, fontWeight: '600' },
+  collectionValue: { color: '#fff', fontSize: 26, fontWeight: '800', marginTop: 4 },
+  collectionSub: { color: '#86efac', fontSize: 12, marginTop: 6 },
+  collectionGlyph: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: colors.green + '22', borderWidth: 1, borderColor: colors.green + '55',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  collectionGlyphText: { color: colors.green, fontSize: 22, fontWeight: '800' },
 
   greetCard: {
     flexDirection: 'row',

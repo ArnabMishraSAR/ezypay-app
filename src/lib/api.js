@@ -65,6 +65,7 @@ export const api = {
   poll: (payload) => request('/api/device/poll', payload),
   report: (payload) => request('/api/device/report', payload),
   transactions: (payload) => request('/api/device/transactions', payload),
+  stats: (payload) => request('/api/device/stats', payload),
   verify: (payload) => request('/api/device/verify', payload),
 };
 

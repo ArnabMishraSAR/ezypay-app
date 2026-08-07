@@ -37,6 +37,29 @@ export function withinDays(d, days) {
   return d >= cutoff;
 }
 
+// A Date's local calendar day as YYYY-MM-DD — no timezone conversion, so it
+// matches withinDays()'s local-midnight cutoff and, on a Bangladesh device,
+// the REPORT_TZ days the backend filters on.
+function ymdLocal(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// Turn a date preset into the {from,to} the backend understands, so the query
+// covers the whole window instead of the newest page. 'all' (or anything
+// without a day count) yields no bounds. Mirrors withinDays: `to` is today,
+// `from` is (days-1) back, both inclusive.
+export function presetRange(preset) {
+  const days = { today: 1, '7d': 7, '30d': 30 }[preset];
+  if (!days) return {};
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - (days - 1));
+  return { from: ymdLocal(from), to: ymdLocal(to) };
+}
+
 export function isToday(d) {
   if (!d) return false;
   const now = new Date();
