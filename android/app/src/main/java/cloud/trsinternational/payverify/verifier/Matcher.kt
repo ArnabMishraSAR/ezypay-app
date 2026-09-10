@@ -120,7 +120,10 @@ object Matcher {
         val ok: Boolean,
         val reason: String? = null,
         val phoneMatch: Boolean? = null,
-        val senderMatch: Boolean = false
+        val senderMatch: Boolean = false,
+        // Diagnostic only — the SMS named the amount we asked for. A false here
+        // is still a match; the server settles the difference.
+        val amountMatch: Boolean = false
     )
 
     /**
@@ -138,10 +141,6 @@ object Matcher {
         if (txnid.length < 6)       return Result(false, "txnid too short")
         if (!body.contains(txnid))  return Result(false, "txnid not in body")
 
-        if (!bodyContainsAmount(body, v.amount)) {
-            return Result(false, "amount not in body")
-        }
-
         // STRICT sender allowlist — anti-forgery.
         if (hasKnownSenderHints(v.provider)) {
             if (!senderHintMatches(v.provider, sms.address)) {
@@ -149,10 +148,19 @@ object Matcher {
             }
         }
 
+        // The amount is NOT a gate. It used to be: an SMS naming a different
+        // figure was discarded, so a customer who paid 100 against a 500 order
+        // was never reported at all and the payment sat pending for ever.
+        //
+        // TxnID + sender allowlist + recency are what prove the SMS is genuine;
+        // the amount is a property of a payment we have already identified. We
+        // report it as a match and send the body, and the server reads the real
+        // amount out of it and decides whether the order is covered.
         return Result(
             ok = true,
             phoneMatch = phoneAppearsInBody(body, v.customerPhone),
-            senderMatch = true
+            senderMatch = true,
+            amountMatch = bodyContainsAmount(body, v.amount)
         )
     }
 

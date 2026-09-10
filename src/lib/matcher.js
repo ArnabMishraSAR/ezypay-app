@@ -87,10 +87,6 @@ export function matchSmsDetailed(verification, sms) {
   if (txnid.length < 6)          return { ok: false, reason: 'txnid too short' };
   if (!body.includes(txnid))     return { ok: false, reason: 'txnid not in body' };
 
-  if (!bodyContainsAmount(body, verification.amount)) {
-    return { ok: false, reason: 'amount not in body' };
-  }
-
   // STRICT sender allowlist — anti-forgery.
   // Reject SMS not from the provider's official sender ID.
   if (hasKnownSenderHints(verification.provider)) {
@@ -102,10 +98,19 @@ export function matchSmsDetailed(verification, sms) {
     }
   }
 
+  // The amount is NOT a gate. It used to be: an SMS naming a different figure
+  // was discarded, so a customer who paid 100 against a 500 order was never
+  // reported at all and the payment sat pending for ever.
+  //
+  // TxnID + sender allowlist + recency are what prove the SMS is genuine; the
+  // amount is a property of a payment we have already identified. We report the
+  // match and send the body, and the server reads the real amount out of it and
+  // decides whether the order is covered.
   return {
     ok: true,
     phoneMatch:  phoneAppearsInBody(body, verification.customer_phone),
     senderMatch: true,
+    amountMatch: bodyContainsAmount(body, verification.amount),
   };
 }
 

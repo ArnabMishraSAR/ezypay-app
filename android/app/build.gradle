@@ -102,8 +102,11 @@ android {
         // 4 / 0.3.1 — server-side date filtering on the transactions screen (Today/7d/30d).
         // 5 / 0.3.2 — paginated transactions (page size + newer/older), server-side gateway filter.
         // 6 / 0.3.3 — per-account approved totals, real dashboard stats + live Today's Collection.
-        versionCode 6
-        versionName "0.3.3"
+        // 7 / 0.3.4 — Yesterday date filter; pager moved up beside the per-page chips.
+        // 8 / 0.3.5 — amount is no longer a match gate: report the SMS and let the
+        //             server settle short/over payments instead of leaving them pending.
+        versionCode 8
+        versionName "0.3.5"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

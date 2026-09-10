@@ -48,10 +48,19 @@ function ymdLocal(d) {
 }
 
 // Turn a date preset into the {from,to} the backend understands, so the query
-// covers the whole window instead of the newest page. 'all' (or anything
-// without a day count) yields no bounds. Mirrors withinDays: `to` is today,
-// `from` is (days-1) back, both inclusive.
+// covers the whole window instead of the newest page. 'all' (or an unknown
+// preset) yields no bounds. Mirrors withinDays: `to` is today, `from` is
+// (days-1) back, both inclusive.
+//
+// 'yesterday' is the exception — it's a single day that does NOT end today, so
+// it can't be expressed as a trailing window and gets its own branch.
 export function presetRange(preset) {
+  if (preset === 'yesterday') {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const ymd = ymdLocal(d);
+    return { from: ymd, to: ymd };
+  }
   const days = { today: 1, '7d': 7, '30d': 30 }[preset];
   if (!days) return {};
   const to = new Date();

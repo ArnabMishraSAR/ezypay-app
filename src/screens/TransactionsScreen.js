@@ -23,10 +23,11 @@ import {
 } from '../lib/txn';
 
 const DATE_PRESETS = [
-  { key: 'today', label: 'Today' },
-  { key: '7d',    label: '7 Days' },
-  { key: '30d',   label: '30 Days' },
-  { key: 'all',   label: 'All' },
+  { key: 'today',     label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: '7d',        label: '7 Days' },
+  { key: '30d',       label: '30 Days' },
+  { key: 'all',       label: 'All' },
 ];
 
 // Rows per page the merchant can choose between.
@@ -189,11 +190,60 @@ export default function TransactionsScreen({
             </>
           ) : null}
 
-          <Text style={[styles.filterLabel, { marginTop: 10 }]}>Per page</Text>
-          <View style={styles.chipRowStatic}>
-            {PAGE_SIZES.map((n) => (
-              <Chip key={n} active={pageSize === n} onPress={() => selectPageSize(n)}>{String(n)}</Chip>
-            ))}
+          {/* Per page and the pager share one row: paging used to live at the
+              very bottom, which meant scrolling the whole list to reach it. */}
+          <View style={styles.perPageHeader}>
+            <Text style={[styles.filterLabel, { marginBottom: 0 }]}>Per page</Text>
+            {total > 0 ? (
+              <Text style={styles.pagerCountInline}>
+                {firstRow}–{lastRow} of {total}
+                <Text style={styles.pagerPageInline}>  ·  Page {page + 1}/{totalPages}</Text>
+              </Text>
+            ) : null}
+          </View>
+
+          <View style={styles.perPageRow}>
+            <View style={styles.chipRowStatic}>
+              {PAGE_SIZES.map((n) => (
+                <Chip key={n} active={pageSize === n} onPress={() => selectPageSize(n)}>{String(n)}</Chip>
+              ))}
+            </View>
+
+            {total > 0 ? (
+              <View style={styles.pagerInline}>
+                <Pressable
+                  onPress={goNewer}
+                  disabled={page <= 0 || loading}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="Newer transactions"
+                  accessibilityState={{ disabled: page <= 0 || loading }}
+                  style={({ pressed }) => [
+                    styles.pagerBtnSm,
+                    (page <= 0 || loading) && styles.pagerBtnDisabled,
+                    pressed && { opacity: 0.85 },
+                  ]}
+                >
+                  <Text style={styles.pagerBtnSmText}>‹ Newer</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={goOlder}
+                  disabled={page >= totalPages - 1 || loading}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="Older transactions"
+                  accessibilityState={{ disabled: page >= totalPages - 1 || loading }}
+                  style={({ pressed }) => [
+                    styles.pagerBtnSm,
+                    (page >= totalPages - 1 || loading) && styles.pagerBtnDisabled,
+                    pressed && { opacity: 0.85 },
+                  ]}
+                >
+                  <Text style={styles.pagerBtnSmText}>Older ›</Text>
+                </Pressable>
+              </View>
+            ) : null}
           </View>
         </View>
       ) : null}
@@ -229,38 +279,6 @@ export default function TransactionsScreen({
         />
       )}
 
-      {!isPending && total > 0 ? (
-        <View style={styles.pager}>
-          <Pressable
-            onPress={goNewer}
-            disabled={page <= 0 || loading}
-            style={({ pressed }) => [
-              styles.pagerBtn,
-              (page <= 0 || loading) && styles.pagerBtnDisabled,
-              pressed && { opacity: 0.85 },
-            ]}
-          >
-            <Text style={styles.pagerBtnText}>‹ Newer</Text>
-          </Pressable>
-
-          <View style={styles.pagerInfo}>
-            <Text style={styles.pagerCount}>{firstRow}–{lastRow} of {total}</Text>
-            <Text style={styles.pagerPage}>Page {page + 1} of {totalPages} · newest first</Text>
-          </View>
-
-          <Pressable
-            onPress={goOlder}
-            disabled={page >= totalPages - 1 || loading}
-            style={({ pressed }) => [
-              styles.pagerBtn,
-              (page >= totalPages - 1 || loading) && styles.pagerBtnDisabled,
-              pressed && { opacity: 0.85 },
-            ]}
-          >
-            <Text style={styles.pagerBtnText}>Older ›</Text>
-          </Pressable>
-        </View>
-      ) : null}
     </SafeAreaView>
   );
 }
@@ -370,7 +388,9 @@ const styles = StyleSheet.create({
   },
   filterLabel: { color: colors.muted, fontSize: 11, marginLeft: 6, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
   chipRow: { paddingHorizontal: 4, gap: 8 },
-  chipRowStatic: { flexDirection: 'row', paddingHorizontal: 4 },
+  // flexShrink lets the chips give way before the pager does, so the row can
+  // never overflow on a narrow handset.
+  chipRowStatic: { flexDirection: 'row', paddingHorizontal: 4, flexShrink: 1 },
   chip: {
     paddingHorizontal: 12, paddingVertical: 7,
     borderRadius: 999,
@@ -395,22 +415,26 @@ const styles = StyleSheet.create({
 
   error: { color: '#fca5a5', padding: 12, fontSize: 13, textAlign: 'center' },
 
-  pager: {
+  // Per-page chips on the left, pager on the right, on one row — so paging is
+  // reachable without scrolling past the whole list.
+  perPageHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 12, paddingVertical: 10,
-    borderTopWidth: 1, borderTopColor: colors.border,
-    backgroundColor: colors.bg,
+    marginTop: 10, marginBottom: 6, marginLeft: 6, paddingRight: 4,
   },
-  pagerBtn: {
-    paddingHorizontal: 14, paddingVertical: 8,
+  perPageRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: 8,
+  },
+  pagerInline: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 4, flexShrink: 0 },
+  pagerBtnSm: {
+    paddingHorizontal: 10, paddingVertical: 7,
     borderRadius: 10, borderWidth: 1, borderColor: colors.border,
     backgroundColor: colors.surface,
   },
   pagerBtnDisabled: { opacity: 0.4 },
-  pagerBtnText: { color: colors.text, fontSize: 13, fontWeight: '700' },
-  pagerInfo: { alignItems: 'center' },
-  pagerCount: { color: colors.text, fontSize: 13, fontWeight: '700' },
-  pagerPage: { color: colors.muted, fontSize: 11, marginTop: 2 },
+  pagerBtnSmText: { color: colors.text, fontSize: 12, fontWeight: '700' },
+  pagerCountInline: { color: colors.text, fontSize: 11, fontWeight: '700' },
+  pagerPageInline: { color: colors.muted, fontSize: 11, fontWeight: '600' },
 
   listWrap: { padding: 12 },
   emptyWrap: { flexGrow: 1, justifyContent: 'center', padding: 24 },
