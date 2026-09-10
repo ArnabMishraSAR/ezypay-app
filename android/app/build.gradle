@@ -105,8 +105,10 @@ android {
         // 7 / 0.3.4 — Yesterday date filter; pager moved up beside the per-page chips.
         // 8 / 0.3.5 — amount is no longer a match gate: report the SMS and let the
         //             server settle short/over payments instead of leaving them pending.
-        versionCode 8
-        versionName "0.3.5"
+        // 9 / 0.3.6 — show expected vs received on short/over payments, and an
+        //             OVERPAID badge (an overpayment settles as success).
+        versionCode 9
+        versionName "0.3.6"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

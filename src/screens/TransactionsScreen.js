@@ -318,22 +318,59 @@ function GatewayChip({ active, onPress, title, amount }) {
   );
 }
 
+/**
+ * Compare what arrived against what was asked for.
+ *
+ * `expected_amount` is only sent by newer backends and is null on rows that
+ * predate it, so anything we can't compare is reported as 'exact' — an older
+ * server must never make every row look like a mismatch.
+ *
+ * Returns { kind: 'exact' | 'short' | 'over', expected, received, diff }.
+ */
+function amountState(item) {
+  const received = Number(item?.amount);
+  const expected = item?.expected_amount == null ? null : Number(item.expected_amount);
+  const none = { kind: 'exact', expected: 0, received: 0, diff: 0 };
+
+  if (!Number.isFinite(received) || expected == null || !Number.isFinite(expected)) return none;
+  if (String(item?.status) === 'pending') return none;   // nothing has arrived yet
+
+  const diff = Math.round((received - expected) * 100) / 100;
+  if (Math.abs(diff) <= 0.01) return none;
+  return {
+    kind: diff < 0 ? 'short' : 'over',
+    expected,
+    received,
+    diff: Math.abs(diff),
+  };
+}
+
 function Row({ item, onPress }) {
   const status = normalizeStatus(item.status);
   const prov   = providerStyle(item.provider);
   const amount = Number(item.amount || 0).toFixed(2);
+  const cur    = item.currency || 'BDT';
   const d      = txnDate(item);
   const when   = d ? d.toLocaleString(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
 
+  // How the amount that arrived compares with the amount that was asked for.
+  // An overpayment settles as 'success', so the badge can't be read off the
+  // status alone — the two figures are what separate it from an exact match.
+  const money = amountState(item);
+
   const stColor =
+    money.kind === 'short' || money.kind === 'over' ? colors.amber :
     status === 'success' ? colors.green :
     status === 'failed'  ? colors.red   :
     colors.amber;
   const stBg =
+    money.kind === 'short' || money.kind === 'over' ? colors.amberSoft :
     status === 'success' ? colors.greenSoft :
     status === 'failed'  ? colors.redSoft   :
     colors.amberSoft;
   const stLabel =
+    money.kind === 'short' ? 'UNDERPAID' :
+    money.kind === 'over'  ? 'OVERPAID'  :
     status === 'success' ? 'APPROVED' :
     status === 'failed'  ? 'REJECTED' :
     status === 'pending' ? 'PENDING'  :
@@ -357,9 +394,20 @@ function Row({ item, onPress }) {
         </View>
       </View>
       <View style={styles.rowMid}>
-        <Text style={styles.amount}>{(item.currency || 'BDT')} {amount}</Text>
+        <Text style={styles.amount}>{cur} {amount}</Text>
         {when ? <Text style={styles.when}>{when}</Text> : null}
       </View>
+      {/* The big figure above is what arrived. When that isn't what was asked
+          for, spell out both — "BDT 100.00" alone is misleading on its own. */}
+      {money.kind !== 'exact' ? (
+        <Text style={styles.amountNote}>
+          Expected {cur} {money.expected.toFixed(2)}
+          <Text style={styles.amountNoteDim}>  ·  </Text>
+          {money.kind === 'short'
+            ? `short ${cur} ${money.diff.toFixed(2)}`
+            : `extra ${cur} ${money.diff.toFixed(2)}`}
+        </Text>
+      ) : null}
       {item.order_id ? <Text style={styles.meta}>{item.order_id}</Text> : null}
       {item.txnid_submitted ? <Text style={styles.metaMono}>{item.txnid_submitted}</Text> : null}
     </Wrapper>
@@ -459,6 +507,9 @@ const styles = StyleSheet.create({
   },
   amount: { color: colors.text, fontSize: 18, fontWeight: '800' },
   when: { color: colors.muted, fontSize: 11 },
+  // Amber to tie it to the UNDERPAID / OVERPAID pill on the same row.
+  amountNote:    { color: colors.amber, fontSize: 12, fontWeight: '600', marginTop: 3 },
+  amountNoteDim: { color: colors.muted, fontWeight: '400' },
   meta:    { color: colors.muted, fontSize: 12, marginTop: 4 },
   metaMono:{ color: colors.faint, fontSize: 12, marginTop: 2, letterSpacing: 0.4 },
 });
